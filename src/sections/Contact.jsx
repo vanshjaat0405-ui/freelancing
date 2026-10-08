@@ -57,6 +57,23 @@ export const Contact = ({ onCopyEmail, selectedService }) => {
     }
 
     setErrors({});
+    
+    // Save inquiry to localStorage for Admin Portal
+    try {
+      const newInquiry = {
+        id: Date.now(),
+        name: formData.name.trim(),
+        email: formData.email.trim(),
+        projectType: formData.projectType,
+        message: formData.message.trim(),
+        date: new Date().toLocaleString(),
+      };
+      const existing = JSON.parse(localStorage.getItem('portfolio_inquiries') || '[]');
+      localStorage.setItem('portfolio_inquiries', JSON.stringify([newInquiry, ...existing]));
+    } catch (e) {
+      console.warn('Could not save inquiry to local storage', e);
+    }
+
     setSubmitted(true);
   };
 

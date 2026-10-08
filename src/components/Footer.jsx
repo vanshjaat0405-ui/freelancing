@@ -1,8 +1,8 @@
 import React from 'react';
-import { Github, Linkedin, Mail, Heart, ArrowUp } from 'lucide-react';
+import { Github, Linkedin, Mail, Heart, ArrowUp, Lock } from 'lucide-react';
 import { profile } from '../data/profile';
 
-export const Footer = () => {
+export const Footer = ({ onOpenAdmin }) => {
   const currentYear = new Date().getFullYear();
 
   const footerNav = [
@@ -113,9 +113,19 @@ export const Footer = () => {
           <p>
             &copy; 2026 {profile.name}. All rights reserved.
           </p>
-          <p className="flex items-center gap-1.5">
-            Designed & coded for client success
-          </p>
+          <div className="flex items-center gap-4">
+            <span className="flex items-center gap-1.5">
+              Designed & coded for client success
+            </span>
+            <button
+              onClick={onOpenAdmin}
+              className="inline-flex items-center gap-1 text-[11px] text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors py-1 px-2 rounded hover:bg-slate-200/50 dark:hover:bg-slate-800"
+              title="Admin Portal Login"
+            >
+              <Lock className="w-3 h-3" />
+              <span>Admin Login</span>
+            </button>
+          </div>
         </div>
       </div>
     </footer>

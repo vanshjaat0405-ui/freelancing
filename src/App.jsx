@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ThemeProvider } from './context/ThemeContext';
 import { Navbar } from './components/Navbar';
 import { Footer } from './components/Footer';
 import { Toast } from './components/Toast';
 import { BackToTop } from './components/BackToTop';
+import { AdminPortal } from './components/AdminPortal';
 import { Hero } from './sections/Hero';
 import { About } from './sections/About';
 import { Services } from './sections/Services';
@@ -17,6 +18,19 @@ function PortfolioApp() {
   const [toastMessage, setToastMessage] = useState('');
   const [isToastVisible, setIsToastVisible] = useState(false);
   const [selectedService, setSelectedService] = useState('');
+  const [isAdminOpen, setIsAdminOpen] = useState(false);
+
+  // Keyboard shortcut: Ctrl + Shift + A to open Admin Portal
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'A' || e.key === 'a')) {
+        e.preventDefault();
+        setIsAdminOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const triggerToast = (message = 'Email address copied to clipboard!') => {
     setToastMessage(message);
@@ -51,7 +65,7 @@ function PortfolioApp() {
       </main>
 
       {/* Footer */}
-      <Footer />
+      <Footer onOpenAdmin={() => setIsAdminOpen(true)} />
 
       {/* Utilities */}
       <BackToTop />
@@ -60,6 +74,9 @@ function PortfolioApp() {
         isVisible={isToastVisible}
         onClose={() => setIsToastVisible(false)}
       />
+
+      {/* Admin Portal Modal (vansh jaat / vansh jaat) */}
+      <AdminPortal isOpen={isAdminOpen} onClose={() => setIsAdminOpen(false)} />
     </div>
   );
 }
