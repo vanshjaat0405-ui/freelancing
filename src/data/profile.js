@@ -13,7 +13,7 @@ export const profile = {
   whatsapp: "+918725096398",
   alternatePhone: "+916398887830",
   whatsappMessage: "Hi Vansh! I checked out your portfolio and would like to discuss a web project.",
-  github: "https://github.com/vanshjaat", // Replace with your GitHub profile link
+  github: "https://github.com/vanshjaat0405-ui",
   linkedin: "https://linkedin.com/in/vanshjaat", // Replace with your LinkedIn profile link
   calendly: "https://calendly.com", // Replace with your Calendly / Cal.com booking link if available
 
