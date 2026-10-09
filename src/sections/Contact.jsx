@@ -4,14 +4,17 @@ import {
   Copy,
   Check,
   Send,
-  MessageSquare,
   Calendar,
   Github,
   Linkedin,
   MessageCircle,
   Phone,
   Sparkles,
-  AlertCircle
+  AlertCircle,
+  Loader2,
+  CheckCircle2,
+  AlertTriangle,
+  ArrowRight
 } from 'lucide-react';
 import { profile } from '../data/profile';
 
@@ -24,8 +27,11 @@ export const Contact = ({ onCopyEmail, selectedService }) => {
   });
 
   const [errors, setErrors] = useState({});
-  const [submitted, setSubmitted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitStatus, setSubmitStatus] = useState('idle'); // 'idle' | 'success' | 'error' | 'setup_needed'
+  const [errorMessage, setErrorMessage] = useState('');
   const [emailCopied, setEmailCopied] = useState(false);
+  const [lastSubmitted, setLastSubmitted] = useState(null);
 
   // Sync if parent updates selectedService
   React.useEffect(() => {
@@ -36,19 +42,32 @@ export const Contact = ({ onCopyEmail, selectedService }) => {
 
   const validate = () => {
     const errs = {};
-    if (!formData.name.trim()) errs.name = 'Please provide your name.';
-    if (!formData.email.trim()) {
+    const trimmedName = formData.name.trim();
+    const trimmedEmail = formData.email.trim();
+    const trimmedMsg = formData.message.trim();
+
+    if (!trimmedName) {
+      errs.name = 'Please provide your name.';
+    } else if (trimmedName.length < 2) {
+      errs.name = 'Name must be at least 2 characters.';
+    }
+
+    if (!trimmedEmail) {
       errs.email = 'Please provide your email address.';
-    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
       errs.email = 'Please enter a valid email address.';
     }
-    if (!formData.message.trim()) {
+
+    if (!trimmedMsg) {
       errs.message = 'Please provide brief details about your project.';
+    } else if (trimmedMsg.length < 10) {
+      errs.message = 'Message must be at least 10 characters so I can understand your requirements.';
     }
+
     return errs;
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     const validationErrors = validate();
     if (Object.keys(validationErrors).length > 0) {
@@ -57,24 +76,93 @@ export const Contact = ({ onCopyEmail, selectedService }) => {
     }
 
     setErrors({});
-    
-    // Save inquiry to localStorage for Admin Portal
+    setIsSubmitting(true);
+    setErrorMessage('');
+
+    const newInquiry = {
+      id: Date.now(),
+      name: formData.name.trim(),
+      email: formData.email.trim(),
+      projectType: formData.projectType,
+      message: formData.message.trim(),
+      date: new Date().toLocaleString(),
+    };
+
+    // 1. Always record in Admin Portal localStorage
     try {
-      const newInquiry = {
-        id: Date.now(),
-        name: formData.name.trim(),
-        email: formData.email.trim(),
-        projectType: formData.projectType,
-        message: formData.message.trim(),
-        date: new Date().toLocaleString(),
-      };
       const existing = JSON.parse(localStorage.getItem('portfolio_inquiries') || '[]');
       localStorage.setItem('portfolio_inquiries', JSON.stringify([newInquiry, ...existing]));
-    } catch (e) {
-      console.warn('Could not save inquiry to local storage', e);
+    } catch (err) {
+      console.warn('Could not save inquiry to local storage', err);
     }
 
-    setSubmitted(true);
+    setLastSubmitted(newInquiry);
+
+    // 2. Transmit via Email Service (Web3Forms or Formspree)
+    const serviceConfig = profile.emailService || {};
+    const web3Key = (serviceConfig.web3FormsAccessKey || import.meta.env.VITE_WEB3FORMS_ACCESS_KEY || '').trim();
+    const formspreeId = (serviceConfig.formspreeId || import.meta.env.VITE_FORMSPREE_ID || '').trim();
+
+    try {
+      if (web3Key) {
+        // Submit to Web3Forms
+        const response = await fetch('https://api.web3forms.com/submit', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+          },
+          body: JSON.stringify({
+            access_key: web3Key,
+            name: newInquiry.name,
+            email: newInquiry.email,
+            subject: `New Project Inquiry: ${newInquiry.projectType} from ${newInquiry.name}`,
+            project_type: newInquiry.projectType,
+            message: newInquiry.message,
+            from_name: newInquiry.name,
+            replyto: newInquiry.email,
+          }),
+        });
+
+        const data = await response.json();
+        if (data.success) {
+          setSubmitStatus('success');
+        } else {
+          throw new Error(data.message || 'Web3Forms submission failed');
+        }
+      } else if (formspreeId) {
+        // Submit to Formspree
+        const response = await fetch(`https://formspree.io/f/${formspreeId}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+          },
+          body: JSON.stringify({
+            name: newInquiry.name,
+            email: newInquiry.email,
+            projectType: newInquiry.projectType,
+            message: newInquiry.message,
+          }),
+        });
+
+        if (response.ok) {
+          setSubmitStatus('success');
+        } else {
+          const data = await response.json().catch(() => ({}));
+          throw new Error(data?.errors?.[0]?.message || 'Formspree submission failed');
+        }
+      } else {
+        // No external API key configured yet
+        setSubmitStatus('setup_needed');
+      }
+    } catch (err) {
+      console.error('Contact form submission error:', err);
+      setErrorMessage(err.message || 'Could not send message automatically.');
+      setSubmitStatus('error');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleCopyEmailLocal = () => {
@@ -85,11 +173,28 @@ export const Contact = ({ onCopyEmail, selectedService }) => {
   };
 
   const handleMailtoDirect = () => {
-    const subject = encodeURIComponent(`Project Inquiry: ${formData.projectType} from ${formData.name}`);
+    const name = lastSubmitted?.name || formData.name;
+    const email = lastSubmitted?.email || formData.email;
+    const project = lastSubmitted?.projectType || formData.projectType;
+    const msg = lastSubmitted?.message || formData.message;
+
+    const subject = encodeURIComponent(`Project Inquiry: ${project} from ${name}`);
     const body = encodeURIComponent(
-      `Hi Vansh,\n\nName: ${formData.name}\nEmail: ${formData.email}\nProject Type: ${formData.projectType}\n\nMessage:\n${formData.message}\n`
+      `Hi Vansh,\n\nName: ${name}\nEmail: ${email}\nProject Type: ${project}\n\nMessage:\n${msg}\n`
     );
     window.location.href = `mailto:${profile.email}?subject=${subject}&body=${body}`;
+  };
+
+  const handleResetForm = () => {
+    setFormData({
+      name: '',
+      email: '',
+      projectType: 'Personal Portfolio Website',
+      message: '',
+    });
+    setErrors({});
+    setSubmitStatus('idle');
+    setErrorMessage('');
   };
 
   return (
@@ -271,36 +376,137 @@ export const Contact = ({ onCopyEmail, selectedService }) => {
           {/* Right Column: Contact Form */}
           <div className="lg:col-span-7">
             <div className="bg-white dark:bg-slate-900 p-8 sm:p-10 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm relative">
-              {submitted ? (
-                <div className="py-12 text-center space-y-5 animate-in fade-in duration-300">
+              {/* SUCCESS STATE */}
+              {submitStatus === 'success' ? (
+                <div className="py-10 text-center space-y-5 animate-in fade-in duration-300">
                   <div className="w-16 h-16 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-500 flex items-center justify-center mx-auto border border-emerald-200 dark:border-emerald-800">
-                    <Check className="w-8 h-8" />
+                    <CheckCircle2 className="w-8 h-8" />
                   </div>
-                  <h3 className="text-2xl font-bold text-slate-900 dark:text-white">
-                    Thank You, {formData.name}!
-                  </h3>
-                  <p className="text-slate-600 dark:text-slate-400 max-w-md mx-auto text-sm leading-relaxed">
-                    Your inquiry for a <strong>{formData.projectType}</strong> has been prepared. You can send it directly to my inbox with one click below:
-                  </p>
+                  <div className="space-y-2">
+                    <h3 className="text-2xl font-bold text-slate-900 dark:text-white">
+                      Inquiry Sent Successfully!
+                    </h3>
+                    <p className="text-slate-600 dark:text-slate-400 max-w-md mx-auto text-sm leading-relaxed">
+                      Thank you, <strong>{lastSubmitted?.name}</strong>! Your inquiry regarding{' '}
+                      <strong>{lastSubmitted?.projectType}</strong> has been delivered directly to Vansh's inbox (
+                      <span className="font-semibold text-indigo-600 dark:text-indigo-400">{profile.email}</span>).
+                    </p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      I typically review client requirements and respond within 24 hours.
+                    </p>
+                  </div>
 
                   <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
                     <button
+                      onClick={handleResetForm}
+                      className="px-6 py-3 rounded-xl font-semibold text-white bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-600/30 transition-all text-sm w-full sm:w-auto"
+                    >
+                      Send Another Message
+                    </button>
+                    <a
+                      href={`https://wa.me/${profile.whatsapp.replace('+', '')}?text=${encodeURIComponent(
+                        `Hi Vansh! I just sent you a project inquiry through your website form for ${lastSubmitted?.projectType}.`
+                      )}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-5 py-3 rounded-xl font-medium text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 transition-colors text-sm flex items-center justify-center gap-1.5 w-full sm:w-auto"
+                    >
+                      <MessageCircle className="w-4 h-4 text-emerald-500" />
+                      <span>Chat on WhatsApp</span>
+                    </a>
+                  </div>
+                </div>
+              ) : submitStatus === 'setup_needed' ? (
+                /* SETUP NEEDED STATE (Graceful onboarding fallback) */
+                <div className="py-8 text-center space-y-5 animate-in fade-in duration-300">
+                  <div className="w-14 h-14 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center mx-auto border border-indigo-200 dark:border-indigo-800">
+                    <Check className="w-7 h-7" />
+                  </div>
+                  <div className="space-y-2">
+                    <h3 className="text-xl font-bold text-slate-900 dark:text-white">
+                      Inquiry Captured & Prepared!
+                    </h3>
+                    <p className="text-slate-600 dark:text-slate-400 max-w-md mx-auto text-sm leading-relaxed">
+                      Your inquiry from <strong>{lastSubmitted?.name}</strong> for{' '}
+                      <strong>{lastSubmitted?.projectType}</strong> is saved. To enable instant 1-click transmission to your inbox:
+                    </p>
+                    <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-left text-xs text-slate-700 dark:text-slate-300 space-y-1">
+                      <p className="font-semibold text-indigo-600 dark:text-indigo-400">
+                        ⚡ How to activate Web3Forms email delivery:
+                      </p>
+                      <p>1. Get a free access key at <a href="https://web3forms.com" target="_blank" rel="noreferrer" className="underline font-mono">web3forms.com</a>.</p>
+                      <p>2. Paste your access key into <code className="font-mono bg-slate-200 dark:bg-slate-700 px-1 py-0.5 rounded">src/data/profile.js</code> or Vercel Env <code className="font-mono bg-slate-200 dark:bg-slate-700 px-1 py-0.5 rounded">VITE_WEB3FORMS_ACCESS_KEY</code>.</p>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    In the meantime, dispatch your inquiry directly using either option:
+                  </p>
+
+                  <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+                    <button
                       onClick={handleMailtoDirect}
-                      className="inline-flex items-center gap-2 px-6 py-3.5 rounded-xl font-semibold text-white bg-indigo-600 hover:bg-indigo-700 shadow-lg shadow-indigo-600/30 transition-all text-sm w-full sm:w-auto justify-center"
+                      className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl font-semibold text-white bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-600/30 transition-all text-xs sm:text-sm w-full sm:w-auto"
                     >
                       <Send className="w-4 h-4" />
                       <span>Send via Email Client</span>
                     </button>
-                    <button
-                      onClick={() => setSubmitted(false)}
-                      className="px-5 py-3 rounded-xl font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-sm"
+                    <a
+                      href={`https://wa.me/${profile.whatsapp.replace('+', '')}?text=${encodeURIComponent(
+                        `Hi Vansh! Project Inquiry from ${lastSubmitted?.name} (${lastSubmitted?.email}) for ${lastSubmitted?.projectType}: "${lastSubmitted?.message}"`
+                      )}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center justify-center gap-1.5 px-5 py-3 rounded-xl font-medium text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 transition-colors text-xs sm:text-sm w-full sm:w-auto"
                     >
-                      Reset Form
-                    </button>
+                      <MessageCircle className="w-4 h-4 text-emerald-500" />
+                      <span>Send via WhatsApp</span>
+                    </a>
                   </div>
+
+                  <button
+                    onClick={() => setSubmitStatus('idle')}
+                    className="text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 underline pt-2"
+                  >
+                    Back to Edit Form
+                  </button>
                 </div>
               ) : (
-                <form onSubmit={handleSubmit} className="space-y-6">
+                /* REGULAR CONTACT FORM */
+                <form onSubmit={handleSubmit} className="space-y-6" noValidate>
+                  {/* Error Banner */}
+                  {submitStatus === 'error' && (
+                    <div className="p-4 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 text-xs text-rose-700 dark:text-rose-400 space-y-2 animate-in fade-in">
+                      <div className="flex items-center gap-2 font-semibold">
+                        <AlertCircle className="w-4 h-4 flex-shrink-0 text-rose-500" />
+                        <span>Could not deliver message automatically: {errorMessage}</span>
+                      </div>
+                      <p className="text-[11px] text-rose-600/90 dark:text-rose-400/90">
+                        Don't worry, you can dispatch your message directly:
+                      </p>
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={handleMailtoDirect}
+                          className="px-3 py-1.5 rounded-lg bg-rose-600 text-white font-medium hover:bg-rose-700 transition-colors"
+                        >
+                          Send via Mail Client
+                        </button>
+                        <a
+                          href={`https://wa.me/${profile.whatsapp.replace('+', '')}?text=${encodeURIComponent(
+                            `Hi Vansh! Inquiry from ${formData.name}: "${formData.message}"`
+                          )}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-medium hover:bg-emerald-700 transition-colors inline-flex items-center gap-1"
+                        >
+                          <MessageCircle className="w-3.5 h-3.5" />
+                          <span>WhatsApp Directly</span>
+                        </a>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                     {/* Name */}
                     <div>
@@ -310,13 +516,17 @@ export const Contact = ({ onCopyEmail, selectedService }) => {
                       <input
                         type="text"
                         value={formData.name}
-                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                        onChange={(e) => {
+                          setFormData({ ...formData, name: e.target.value });
+                          if (errors.name) setErrors({ ...errors, name: undefined });
+                        }}
                         placeholder="e.g. Rahul Sharma"
+                        disabled={isSubmitting}
                         className={`w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border ${
                           errors.name
                             ? 'border-rose-500 focus:ring-rose-500'
                             : 'border-slate-200 dark:border-slate-700 focus:ring-indigo-500'
-                        } text-slate-900 dark:text-white placeholder-slate-400 text-sm focus:outline-none focus:ring-2 transition-all`}
+                        } text-slate-900 dark:text-white placeholder-slate-400 text-sm focus:outline-none focus:ring-2 transition-all disabled:opacity-60`}
                       />
                       {errors.name && (
                         <p className="mt-1.5 text-xs text-rose-500 flex items-center gap-1">
@@ -334,13 +544,17 @@ export const Contact = ({ onCopyEmail, selectedService }) => {
                       <input
                         type="email"
                         value={formData.email}
-                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                        onChange={(e) => {
+                          setFormData({ ...formData, email: e.target.value });
+                          if (errors.email) setErrors({ ...errors, email: undefined });
+                        }}
                         placeholder="e.g. rahul@example.com"
+                        disabled={isSubmitting}
                         className={`w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border ${
                           errors.email
                             ? 'border-rose-500 focus:ring-rose-500'
                             : 'border-slate-200 dark:border-slate-700 focus:ring-indigo-500'
-                        } text-slate-900 dark:text-white placeholder-slate-400 text-sm focus:outline-none focus:ring-2 transition-all`}
+                        } text-slate-900 dark:text-white placeholder-slate-400 text-sm focus:outline-none focus:ring-2 transition-all disabled:opacity-60`}
                       />
                       {errors.email && (
                         <p className="mt-1.5 text-xs text-rose-500 flex items-center gap-1">
@@ -359,7 +573,8 @@ export const Contact = ({ onCopyEmail, selectedService }) => {
                     <select
                       value={formData.projectType}
                       onChange={(e) => setFormData({ ...formData, projectType: e.target.value })}
-                      className="w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all cursor-pointer"
+                      disabled={isSubmitting}
+                      className="w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all cursor-pointer disabled:opacity-60"
                     >
                       <option value="Personal Portfolio Website">Personal Portfolio Website</option>
                       <option value="Business Website">Business Website</option>
@@ -378,13 +593,17 @@ export const Contact = ({ onCopyEmail, selectedService }) => {
                     <textarea
                       rows={5}
                       value={formData.message}
-                      onChange={(e) => setFormData({ ...formData, message: e.target.value })}
+                      onChange={(e) => {
+                        setFormData({ ...formData, message: e.target.value });
+                        if (errors.message) setErrors({ ...errors, message: undefined });
+                      }}
+                      disabled={isSubmitting}
                       placeholder="Tell me about your project goals, timeline, and any specific preferences..."
                       className={`w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border ${
                         errors.message
                           ? 'border-rose-500 focus:ring-rose-500'
                           : 'border-slate-200 dark:border-slate-700 focus:ring-indigo-500'
-                      } text-slate-900 dark:text-white placeholder-slate-400 text-sm focus:outline-none focus:ring-2 transition-all resize-y`}
+                      } text-slate-900 dark:text-white placeholder-slate-400 text-sm focus:outline-none focus:ring-2 transition-all resize-y disabled:opacity-60`}
                     />
                     {errors.message && (
                       <p className="mt-1.5 text-xs text-rose-500 flex items-center gap-1">
@@ -398,15 +617,25 @@ export const Contact = ({ onCopyEmail, selectedService }) => {
                   <div className="pt-2">
                     <button
                       type="submit"
-                      className="w-full inline-flex items-center justify-center gap-2 px-6 py-4 rounded-xl font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 shadow-lg shadow-indigo-600/30 transition-all text-base hover:scale-[1.01] active:scale-[0.99]"
+                      disabled={isSubmitting}
+                      className="w-full inline-flex items-center justify-center gap-2 px-6 py-4 rounded-xl font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 shadow-lg shadow-indigo-600/30 transition-all text-base hover:scale-[1.01] active:scale-[0.99] disabled:opacity-70 disabled:cursor-not-allowed disabled:hover:scale-100"
                     >
-                      <Send className="w-4 h-4" />
-                      <span>Send Project Inquiry</span>
+                      {isSubmitting ? (
+                        <>
+                          <Loader2 className="w-5 h-5 animate-spin" />
+                          <span>Sending Your Inquiry...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Send className="w-4 h-4" />
+                          <span>Send Project Inquiry</span>
+                        </>
+                      )}
                     </button>
                   </div>
 
                   <p className="text-center text-xs text-slate-500 dark:text-slate-400">
-                    Direct communication with Vansh Jaat. No spam, guaranteed response within 24 hours.
+                    Direct communication with Vansh Jaat. Guaranteed response within 24 hours.
                   </p>
                 </form>
               )}

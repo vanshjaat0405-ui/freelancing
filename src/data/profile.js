@@ -17,6 +17,16 @@ export const profile = {
   linkedin: "https://linkedin.com/in/vanshjaat", // Replace with your LinkedIn profile link
   calendly: "https://calendly.com", // Replace with your Calendly / Cal.com booking link if available
 
+  // Email Delivery Configuration (Web3Forms / Formspree)
+  // For Web3Forms: Obtain a free access key at https://web3forms.com
+  // For Formspree: Obtain your Form ID at https://formspree.io
+  // Can be configured here or in Vercel Environment Variables:
+  emailService: {
+    provider: 'web3forms', // 'web3forms' | 'formspree'
+    web3FormsAccessKey: import.meta.env.VITE_WEB3FORMS_ACCESS_KEY || '',
+    formspreeId: import.meta.env.VITE_FORMSPREE_ID || '',
+  },
+
   // Freelance Profiles (Optional links to share)
   fiverr: "https://www.fiverr.com",
   upwork: "https://www.upwork.com",

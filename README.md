@@ -71,7 +71,18 @@ All your personal details, links, and portfolio items are stored cleanly inside 
 
 ## 📬 Connecting Real Email Delivery to the Contact Form
 
-Right now, the form validates inputs and prepares a one-click mail client sender. To receive emails directly in your inbox from web visitors without setting up a backend:
-1. Go to [formspree.io](https://formspree.io) (Free: 50 emails/month).
-2. Create a form and get your endpoint URL (e.g. `https://formspree.io/f/xv...`).
-3. In `src/sections/Contact.jsx`, add the Formspree endpoint into the `fetch()` call.
+The Contact form is integrated with **Web3Forms** (primary) and **Formspree** (alternative) with real-time field validation, loading states, success screens, and direct error fallbacks.
+
+### Option 1: Web3Forms (Recommended — 100% Free & Instant)
+1. Go to [web3forms.com](https://web3forms.com).
+2. Enter your email: `vansh.webbuilds@gmail.com` and click **"Create Access Key"**.
+3. Check your email inbox for your Access Key (e.g. `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`).
+4. To activate:
+   - **Locally:** In `src/data/profile.js`, paste it into `web3FormsAccessKey`, OR in `.env` as `VITE_WEB3FORMS_ACCESS_KEY=your-key`.
+   - **On Vercel:** Go to Vercel Project Settings > **Environment Variables** > Add `VITE_WEB3FORMS_ACCESS_KEY` and re-deploy.
+
+### Option 2: Formspree (Alternative)
+1. Go to [formspree.io](https://formspree.io), create a new form pointing to your email.
+2. Copy your Form ID (e.g. `xpwzlkjq`).
+3. Set `VITE_FORMSPREE_ID=your-form-id` in Vercel or `src/data/profile.js`.
+
